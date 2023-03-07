@@ -1,131 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
-
-
-import random
-import numpy as np
-import scipy.integrate
-
-
-class Pendulum():
-    def __init__(self, n_theta=31, n_thetadot=31, n_tau=31):
-        # Parameters that describe the physical system
-        self.params = {
-            'm': 1.0,   # mass
-            'g': 9.8,   # acceleration of gravity
-            'l': 1.0,   # length
-            'b': 0.1,   # coefficient of viscous friction
-        }
-
-        # Maximum absolute angular velocity
-        self.max_thetadot = 15.0
-
-        # Maximum absolute angle to be considered "upright"
-        self.max_theta_for_upright = 0.1 * np.pi
-
-        # Maximum absolute angular velocity from which to sample initial condition
-        self.max_thetadot_for_init = 5.0
-
-        # Maximum absolute torque
-        self.max_tau = 5.0
-
-        # Time step
-        self.dt = 0.1
-
-        # Number of grid points in each dimension (should be odd, so that there
-        # is always one grid point at "0")
-        self.n_theta = n_theta
-        self.n_thetadot = n_thetadot
-        self.n_tau = n_tau
-
-        # Number of finite states and actions after discretization
-        self.num_states = self.n_theta * self.n_thetadot
-        self.num_actions = self.n_tau
-
-        # Time horizon
-        self.max_num_steps = 100
-
-        # Reset to initial conditions
-        self.reset()
-
-    def _x_to_s(self, x):
-        # Get theta - wrapping to [-pi, pi) - and thetadot
-        theta = ((x[0] + np.pi) % (2 * np.pi)) - np.pi
-        thetadot = x[1]
-        # Convert to i, j coordinates
-        i = (self.n_theta * (theta + np.pi)) // (2 * np.pi)
-        j = (self.n_thetadot * (thetadot + self.max_thetadot)) // (2 * self.max_thetadot)
-        # Clamp i, j coordinates
-        i = max(0, min(self.n_theta - 1, i))
-        j = max(0, min(self.n_thetadot - 1, j))
-        # Convert to state
-        return int(i * self.n_thetadot + j)
-
-    def _a_to_u(self, a):
-        return -self.max_tau + ((2 * self.max_tau * a) / (self.n_tau - 1))
-
-    def _dxdt(self, x, u):
-        theta_ddot =  (u - self.params['b'] * x[1] + self.params['m'] * self.params['g'] * self.params['l'] * np.sin(x[0])) / (self.params['m'] * self.params['l']**2)
-        return np.array([x[1], theta_ddot])
-
-    def step(self, a):
-        # Verify action is in range
-        if not (a in range(self.num_actions)):
-            raise ValueError(f'invalid action {a}')
-
-        # Convert a to u
-        u = self._a_to_u(a)
-
-        # Solve ODEs to find new x
-        sol = scipy.integrate.solve_ivp(fun=lambda t, x: self._dxdt(x, u), t_span=[0, self.dt], y0=self.x, t_eval=[self.dt])
-        self.x = sol.y[:, 0]
-
-        # Convert x to s
-        self.s = self._x_to_s(self.x)
-
-        # Get theta - wrapping to [-pi, pi) - and thetadot
-        theta = ((self.x[0] + np.pi) % (2 * np.pi)) - np.pi
-        thetadot = self.x[1]
-
-        # Compute reward
-        if abs(thetadot) > self.max_thetadot:
-            # If constraints are violated, then return large negative reward
-            r = -100
-        elif abs(theta) < self.max_theta_for_upright:
-            # If pendulum is upright, then return small positive reward
-            r = 1
-        else:
-            # Otherwise, return zero reward
-            r = 0
-
-        # Increment number of steps and check for end of episode
-        self.num_steps += 1
-        self.t = self.num_steps * self.dt
-        done = (self.num_steps >= self.max_num_steps)
-
-        return (self.s, r, done)
-
-    def reset(self):
-        # Sample theta and thetadot
-        self.x = np.random.uniform([-np.pi, -self.max_thetadot_for_init], [np.pi, self.max_thetadot_for_init])
-
-        # Convert to finite state
-        self.s = self._x_to_s(self.x)
-
-        # Reset current time (expressed as number of simulation steps taken so far) to zero
-        self.num_steps = 0
-        self.t = self.num_steps * self.dt
-
-        return self.s
-
-    def render(self):
-        # TODO (we will happily accept a PR to create a graphic visualization of the pendulum)
-        pass
-
-
-# In[2]:
+# In[61]:
 
 
 import random
@@ -137,7 +13,7 @@ env = discrete_pendulum.Pendulum()
 
 # SARSA
 
-# In[3]:
+# In[51]:
 
 
 def SARSA(states,actions,gamma,alpha,epsilon):
@@ -148,7 +24,7 @@ def SARSA(states,actions,gamma,alpha,epsilon):
     # gamma = 0.95
 
     Q = np.zeros((states,actions))
-    
+    Q_T = np.zeros(total_episodes)
     # Function to choose the next action with episolon greedy
     def choose_action(state):
         action=0
@@ -162,7 +38,7 @@ def SARSA(states,actions,gamma,alpha,epsilon):
         t = 0
         state1 = env.reset()
         action1 = choose_action(state1)
-        
+        QT = 0
         while t < max_steps:
             state2, reward, done = env.step(action1)
     
@@ -171,7 +47,7 @@ def SARSA(states,actions,gamma,alpha,epsilon):
             
             #Learning the Q-value
             Q[state1, action1] = Q[state1, action1] + alpha * (reward + gamma * Q[state2, action2] - Q[state1, action1])
-            
+            QT += gamma**t * reward
             state1 = state2
             action1 = action2
             
@@ -179,62 +55,14 @@ def SARSA(states,actions,gamma,alpha,epsilon):
             t += 1 
             #If at the end of learning process
             if done:
-                break    
-        return Q
+                break 
+        Q_T[episode] = QT   
+    return Q_T, Q
 
 
-# In[5]:
+# Q-Learning
 
-
-epsilon = 0.1
-alpha = 0.05
-gamma = 0.95
-states = env.num_states
-actions = env.num_actions
-# Q = SARSA(states,actions,gamma,alpha,epsilon)
-
-
-# TD(0)
-
-# In[6]:
-
-
-def optimalpolicy(state):
-    pi = np.zeros((len(Q[:,0])))
-    for i in range(len(Q[:,0])):
-        pi[i] = np.argmax(Q[i,:])
-        i = state
-    print(pi)
-    return pi
-def TD_0(states):    
-    Q = np.zeros((states))
-    total_episodes = 1000
-    max_steps = 1000
-    for episode in range(total_episodes):
-        t = 0
-        state1 = env.reset()
-        while t < max_steps:
-            action1 = optimalpolicy(state1)[state1]
-            # Getting the next state
-            state2, reward, done = env.step(action1)
-            Q[state1] = Q[state1] + alpha * (reward + gamma * Q[state2] - Q[state1])
-            state1 = state2
-            t += 1
-            if done:
-                break   
-    return Q 
-
-
-# In[7]:
-
-
-states = env.num_states
-# TD_0(states)
-
-
-# Q-LEARNING
-
-# In[8]:
+# In[79]:
 
 
 def QLearning(states,actions,gamma,alpha,epsilon):
@@ -245,7 +73,7 @@ def QLearning(states,actions,gamma,alpha,epsilon):
     # gamma = 0.95
 
     Q = np.zeros((states,actions))
-
+    Q_T = np.zeros(total_episodes)
     # Function to choose the next action with episolon greedy
     def choose_action(state):
         action=0
@@ -254,13 +82,13 @@ def QLearning(states,actions,gamma,alpha,epsilon):
         else:
             action = np.argmax(Q[state, :])
         return action
-    reward=0
+    
     
     # Starting the SARSA learning
     for episode in range(total_episodes):
         t = 0
         state1 = env.reset()
-        Q_T = 0
+        QT = 0
     
         while t < max_steps:
             action1 = choose_action(state1)  
@@ -270,7 +98,7 @@ def QLearning(states,actions,gamma,alpha,epsilon):
             # action1p = np.argmax(Q[state2, :])
             #Learning the Q-value
             Q[state1, action1] = Q[state1, action1] + alpha * (reward + gamma * Q[state2, action1p] - Q[state1, action1])
-            Q_T += gamma**t * reward
+            QT += gamma**t * reward
             state1 = state2
             
             #Updating the respective vaLues
@@ -279,33 +107,23 @@ def QLearning(states,actions,gamma,alpha,epsilon):
             #If at the end of learning process
             if done:
                 break 
-    return Q_T
+        Q_T[episode] = QT
+    return Q_T, Q
 
 
-# In[9]:
+# TD(0) and Optimal-Policy
+
+# In[78]:
 
 
-epsilon = 0.1
-alpha = 0.05
-gamma = 0.95
-states = env.num_states
-actions = env.num_actions
-# QLearning(states,actions,gamma,alpha,epsilon)
-
-
-# TD(0)
-
-# In[10]:
-
-
-def optimalpolicy(state):
+def optimalpolicy(Q):
     pi = np.zeros((len(Q[:,0])))
     for i in range(len(Q[:,0])):
         pi[i] = np.argmax(Q[i,:])
-        i = state
-    print(pi)
+    # print(pi)
     return pi
-def TD_0(states):    
+def TD_0(Q_algorithm, states):    
+    pi = optimalpolicy(Q_algorithm)
     Q = np.zeros((states))
     total_episodes = 1000
     max_steps = 1000
@@ -313,7 +131,7 @@ def TD_0(states):
         t = 0
         state1 = env.reset()
         while t < max_steps:
-            action1 = optimalpolicy(state1)[state1]
+            action1 = pi[state1]
             # Getting the next state
             state2, reward, done = env.step(action1)
             Q[state1] = Q[state1] + alpha * (reward + gamma * Q[state2] - Q[state1])
@@ -321,12 +139,202 @@ def TD_0(states):
             t += 1
             if done:
                 break   
-    return Q 
+    return Q
 
 
-# In[11]:
+# Trajectory 
+
+# In[83]:
+
+
+def trajectory(pi):
+    env = discrete_pendulum.Pendulum()
+
+    # Initialize simulation
+    s = env.reset()
+
+    # Create log to store data from simulation
+    log = {
+        't': [0],
+        's': [s],
+        'a': [],
+        'r': [],
+    }
+    
+    done = False
+    while not done:
+        a = pi[s]
+        (s, r, done) = env.step(a)
+        log['t'].append(log['t'][-1] + 1)
+        log['s'].append(s)
+        log['a'].append(a)
+        log['r'].append(r)
+
+    # Plot data and save to png file
+    plt.plot(log['t'], log['s'])
+    plt.plot(log['t'][:-1], log['a'])
+    plt.plot(log['t'][:-1], log['r'])
+    plt.legend(['s', 'a', 'r'])
+    plt.savefig('figures/gridworld/test_gridworld.png')
+
+
+# In[54]:
+
+
+epsilon = 0.8
+alpha = 0.05
+gamma = 0.95
+states = env.num_states
+actions = env.num_actions
+Q_T_sarsa, Q_sarsa = SARSA(states,actions,gamma,alpha,epsilon)
+
+
+# SARSA plot - The return versus the number of episodes.
+
+# In[55]:
+
+
+plt.plot(Q_T_sarsa)
+plt.ylabel('Return')
+plt.xlabel('Episodes')
+
+
+# Learning Curve SARSA for different values of Epsilon
+
+# In[58]:
+
+
+e  = np.linspace(0.2,0.8,3)
+x = np.linspace(1,1001,1000)
+for i in range(len(e)):
+    Q_T, Q = SARSA(states,actions,gamma,alpha,e[i])
+    plt.plot(Q_T, label = i)
+
+plt.xlabel('Episodes')
+plt.ylabel('Return')
+plt.ylim(-2,15)
+plt.legend(loc="upper right")
+plt.grid(True)
+plt.show()
+
+
+# Learning Curve SARSA for different values of Alpha
+
+# In[60]:
+
+
+alpha  = np.linspace(0.02,0.05,3)
+x = np.linspace(1,1001,1000)
+for i in range(len(alpha)):
+    Q_T, Q = SARSA(states,actions,gamma,alpha[i],epsilon)
+    plt.plot(Q_T, label = alpha[i])
+plt.xlabel('Episodes')
+plt.ylabel('Return')
+plt.ylim(-2,15)
+plt.legend(loc="upper right")
+plt.grid(True)
+plt.show()
+
+
+# Q-Learning plot - The return versus the number of episodes.
+
+# In[62]:
+
+
+epsilon = 0.8
+alpha = 0.05
+gamma = 0.95
+states = env.num_states
+actions = env.num_actions
+Q_T_QL, Q_QL = QLearning(states,actions,gamma,alpha,epsilon)
+plt.plot(Q_T_QL)
+plt.ylabel('Return')
+plt.xlabel('Episodes')
+
+
+# Learning Curve Q-Learning for different values of Epsilon
+
+# In[86]:
+
+
+e  = np.linspace(0.2,0.8,3)
+x = np.linspace(1,1001,1000)
+for i in range(len(e)):
+    Q_T, Q = QLearning(states,actions,gamma,alpha,e[i])
+    plt.plot(Q_T, label = i)
+
+plt.xlabel('Episodes')
+plt.ylabel('Return')
+plt.ylim(-2,15)
+plt.legend(loc="upper right")
+plt.grid(True)
+plt.show()
+
+
+# Learning Curve Q-Learning for different values of Alpha
+
+# In[87]:
+
+
+alpha  = np.linspace(0.02,0.05,3)
+x = np.linspace(1,1001,1000)
+for i in range(len(alpha)):
+    Q_T, Q = QLearning(states,actions,gamma,alpha[i],epsilon)
+    plt.plot(Q_T, label = alpha[i])
+plt.xlabel('Episodes')
+plt.ylabel('Return')
+plt.ylim(-2,15)
+plt.legend(loc="upper right")
+plt.grid(True)
+plt.show()
+
+
+# Plot of Policy - SARSA
+
+# In[70]:
+
+
+pi = optimalpolicy(Q_sarsa)
+plt.plot(pi,label = 'Policy - SARSA')
+
+
+# In[84]:
+
+
+trajectory(pi)
+
+
+# Plot of Policy - QLearning
+
+# In[71]:
+
+
+pi = optimalpolicy(Q_QL)
+plt.plot(pi)
+
+
+# In[85]:
+
+
+trajectory(pi)
+
+
+# Plot of State-Value Function : SARSA
+
+# In[80]:
 
 
 states = env.num_states
-# TD_0(states)
+V_SARSA = TD_0(Q_sarsa,states)
+plt.plot(V_SARSA)
+
+
+# Plot of State-Value Function - QLearning
+
+# In[75]:
+
+
+states = env.num_states
+V_QL = TD_0(Q_QL,states)
+plt.plot(V_QL)
 
