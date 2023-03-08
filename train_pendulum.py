@@ -147,8 +147,22 @@ def TD_0(Q_algorithm, states):
 # In[83]:
 
 
+def test_x_to_s(env):
+    theta = ((env.x[0] + np.pi) % (2 * np.pi)) - np.pi
+    theta = np.linspace(-np.pi * (1 - (1 / env.n_theta)), np.pi * (1 - (1 / env.n_theta)), env.n_theta)
+    thetadot = np.linspace(-env.max_thetadot * (1 - (1 / env.n_thetadot)), env.max_thetadot * (1 - (1 / env.n_thetadot)), env.n_thetadot)
+    for s in range(env.num_states):
+        i = s // env.n_thetadot
+        j = s % env.n_thetadot
+        s1 = env._x_to_s([theta[i], thetadot[j]])
+        if s1 != s:
+            raise Exception(f'test_x_to_s: error in state representation: {s} and {s1} should be the same')
+    print('test_x_to_s: passed')
 def trajectory(pi):
-    env = discrete_pendulum.Pendulum()
+    env = discrete_pendulum.Pendulum(n_theta=15, n_thetadot=21)
+
+    # Apply unit test to check state representation
+    test_x_to_s(env)
 
     # Initialize simulation
     s = env.reset()
@@ -159,8 +173,9 @@ def trajectory(pi):
         's': [s],
         'a': [],
         'r': [],
+        'theta': [env.x[0]],        # agent does not have access to this, but helpful for display
+        'thetadot': [env.x[1]],     # agent does not have access to this, but helpful for display
     }
-    
     done = False
     while not done:
         a = pi[s]
@@ -169,14 +184,19 @@ def trajectory(pi):
         log['s'].append(s)
         log['a'].append(a)
         log['r'].append(r)
+        log['theta'].append(env.x[0])
+        log['thetadot'].append(env.x[1])
 
     # Plot data and save to png file
-    plt.plot(log['t'], log['s'])
-    plt.plot(log['t'][:-1], log['a'])
-    plt.plot(log['t'][:-1], log['r'])
-    plt.legend(['s', 'a', 'r'])
-    plt.savefig('figures/gridworld/test_gridworld.png')
-
+    fig, ax = plt.subplots(2, 1, figsize=(10, 10))
+    ax[0].plot(log['t'], log['s'])
+    ax[0].plot(log['t'][:-1], log['a'])
+    ax[0].plot(log['t'][:-1], log['r'])
+    ax[0].legend(['s', 'a', 'r'])
+    ax[1].plot(log['t'], log['theta'])
+    ax[1].plot(log['t'], log['thetadot'])
+    ax[1].legend(['theta', 'thetadot'])
+    plt.savefig('figures/pendulum/test_discrete_pendulum.png')
 
 # In[54]:
 
